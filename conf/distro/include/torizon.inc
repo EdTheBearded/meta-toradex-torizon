@@ -43,7 +43,7 @@ INITRAMFS_IMAGE = "initramfs-ostree-torizon-image"
 INITRAMFS_FSTYPES = "cpio.gz"
 BUILD_OSTREE_TARBALL = "0"
 # We do not need teziimg, ota-ext4 or wic images by default
-IMAGE_FSTYPES_REMOVE ?= "ota-ext4 wic wic.gz wic.bmap wic.xz"
+IMAGE_FSTYPES_REMOVE ?= "wic.gz wic.bmap wic.xz"
 IMAGE_FSTYPES:remove:sota = "${IMAGE_FSTYPES_REMOVE}"
 
 # No need to install boot script, kernel image, devicetrees or firmware into the boot partition
@@ -71,6 +71,10 @@ USERADD_ERROR_DYNAMIC = "skip"
 BBMASK += " \
     /meta-toradex-bsp-common/recipes-core/systemd/systemd_%.bbappend \
     /meta-freescale/recipes-graphics/cairo \
+    /meta-imx/meta-imx-bsp/recipes-bsp/u-boot \
+    /meta-imx/meta-imx-bsp/recipes-bsp/imx-mkimage/imx-mkimage_git.bb \
+    /meta-imx/meta-imx-bsp/conf/machine/imx95-19x19-verdin.conf \
+    /meta-imx/meta-imx-bsp/conf/machine/include/imx95-evk.inc \
 "
 
 # machines where Torizon is experimental

@@ -120,7 +120,6 @@ EXTRA_OSTREE_COMMIT = " \
     --add-metadata-string=oe.garage-target-name="${GARAGE_TARGET_NAME}" \
     --add-metadata-string=oe.garage-target-version="${GARAGE_TARGET_VERSION}" \
     --add-metadata-string=oe.sota-hardware-id="${SOTA_HARDWARE_ID}" \
-    --add-metadata=oe.layers="${OSTREE_LAYER_REVISION_INFO}" \
 "
 
 IMAGE_CMD:ostreecommit[vardepsexclude] += "EXTRA_OSTREE_COMMIT OSTREE_COMMIT_SUBJECT"
@@ -236,11 +235,13 @@ UBOOT_BINARY_OTA:verdin-imx8mp = "imx-boot"
 UBOOT_BINARY_OTA:verdin-am62 = "u-boot.img"
 UBOOT_BINARY_OTA:aquila-am69 = "u-boot.img"
 UBOOT_BINARY_OTA:qemuarm64 = "u-boot.bin"
+UBOOT_BINARY_OTA:imx95-19x19-verdin = "u-boot.bin"
 
 UBOOT_BINARY_OTA_IGNORE = "0"
 # disable for now while we investigate build issues
 UBOOT_BINARY_OTA_IGNORE:verdin-am62 = "1"
 UBOOT_BINARY_OTA_IGNORE:aquila-am69 = "1"
+UBOOT_BINARY_OTA_IGNORE:imx95-19x19-verdin = "1"
 UBOOT_BINARY_OTA_IGNORE:genericx86-64 = "1"
 
 # Function: find_uboot_env_blob
