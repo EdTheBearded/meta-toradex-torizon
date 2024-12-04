@@ -2,6 +2,9 @@ kernel_image_type=@@KERNEL_IMAGETYPE@@
 overlays_file="overlays.txt"
 otaroot=1
 fitconf_fdt_overlays="@@FITCONF_FDT_OVERLAYS@@"
+@@BANK_WORD@@
+fuse_num=@@FUSE_NUM@@
+vars_to_del=@@VARS_TO_DEL@@
 
 set_bootargs=env set bootcmd_args env set bootargs ${defargs} root=LABEL=otaroot rootfstype=ext4 ${bootargs} ${tdxargs}
 
@@ -109,11 +112,6 @@ bootcmd_boot=if test ${bootscript_debug} != 1; then \
                  fi; \
              fi || true
 
-#+START_FUSING_BLOCK_NXP
-@@BANK_WORD@@
-fuse_num=@@FUSE_NUM@@
-vars_to_del=@@VARS_TO_DEL@@
-
 prog_fuses=if test -n "${fuse_prog_list}" && test "${fuse_status}" = "pending" || test "${fuse_status}" = "need-reboot"; then \
                if test "${fuse_status}" = "pending"; then \
                    env set index 1; \
@@ -167,44 +165,32 @@ prog_fuses=if test -n "${fuse_prog_list}" && test "${fuse_status}" = "pending" |
                fi; \
            fi || true
 
-read_fuses=if tdx_secboot_get "bld.secboot" temp && test "${temp}" = "1"; then \
-               echo "## NOTE: Bootloader seems to support secure boot."; \
-               true; \
-           else \
-               echo "## WARNING: Fusing feature not supported by the bootloader."; \
+read_fuses=if test -n "${fuse_num}"; then \
                for num in ${fuse_num}; do \
                    if env exists fuse_val_${num}; then \
-                       env delete fuse_val_${num}; \
-                       env set save_vars 1; \
-                   fi; \
-               done; \
-               false; \
-           fi; \
-           \
-           if test $? = "0" && test -n "${fuse_num}"; then \
-               for num in ${fuse_num}; do \
-                   if env exists fuse_val_${num}; then \
-                       env set temp fuse cmp -q \\$fuse_bank_word_${num} \\$fuse_val_${num}; \
+                       env set temp fuse cmp \\$fuse_bank_word_$num 0x\\$fuse_val_$num; \
                        run temp; \
                    else \
                        false; \
                    fi; \
                    if test $? != "0"; then \
-                       env set temp fuse readv -q \\$fuse_bank_word_${num} fuse_val_${num}; \
-                       if run temp; then \
-                           env set temp env set fuse_val_${num} 0x\\$fuse_val_${num}; \
-                           run temp; \
-                       else \
-                           env delete fuse_val_${num}; \
-                       fi; \
+                       env set temp fuse readm \\$fuse_bank_word_$num ${loadaddr}; \
+                       run temp; \
+                       setexpr.l fuse_val_${num} "*${loadaddr}"; \
                        env set save_vars 1; \
                    fi; \
                done; \
-               if tdx_secboot_get "dev.closed" temp; then \
-                   if test "${fuse_val_close}" != "${temp}"; then \
-                       env set fuse_val_close "${temp}"; \
+               tdx_is_closed; \
+               if test $? != "0"; then \
+                   if test "${fuse_val_close}" != "0"; then \
                        env set save_vars 1; \
                    fi; \
+                   env set fuse_val_close 0; \
+               else \
+                   if test "${fuse_val_close}" != "1"; then \
+                       env set save_vars 1; \
+                   fi; \
+                   env set fuse_val_close 1; \
                fi; \
            fi || true
 
@@ -225,14 +211,6 @@ set_vars=if test "${save_vars}" = "1"; then \
 reset_dev=if test "${fuse_status}" = "need-reboot"; then \
               reset; \
           fi || true
-#+END_FUSING_BLOCK_NXP
-#+START_FUSING_BLOCK_DUMMY
-# Dummy fuse functions:
-prog_fuses=true
-read_fuses=true
-set_vars=true
-reset_dev=true
-#+END_FUSING_BLOCK_DUMMY
 
 # Ensure "prog_fuses", "read_fuses", "set_vars", and "reset_dev" are ran first here.
 bootcmd_run=run prog_fuses && run read_fuses && run set_vars && run reset_dev && \
