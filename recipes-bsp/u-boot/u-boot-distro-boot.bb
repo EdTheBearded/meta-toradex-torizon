@@ -1,8 +1,21 @@
-FILESEXTRAPATHS:prepend := "${THISDIR}/${BPN}:"
+DESCRIPTION = "Boot script for launching images with U-Boot distro boot"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COREBASE}/meta/COPYING.MIT;md5=3da9cfbcb788c80a0384361b4de20420"
 
-SRC_URI:append = " \
+INHIBIT_DEFAULT_DEPS = "1"
+DEPENDS = "u-boot-mkimage-native"
+
+SRC_URI = "\
+    file://boot.cmd.in \
     file://uEnv.txt.in \
 "
+
+APPEND ?= ""
+
+KERNEL_BOOTCMD ??= "bootz"
+KERNEL_BOOTCMD:aarch64 ?= "booti"
+
+DTB_PREFIX ??= "${@d.getVar('KERNEL_DTB_PREFIX').replace("/", "_") if d.getVar('KERNEL_DTB_PREFIX') else ''}"
 
 # FITCONF_FDT_OVERLAYS: String in this variable will be added by the boot
 # script to the string passed to 'bootm' when booting a FIT image. This can
@@ -129,12 +142,59 @@ UENV_VARS_TO_DEL_EXTRA ?= "kernel_image \
     temp \
 "
 
-do_compile:append () {
-    # Normalize input to a shell variable, otherwise following line causes yocto parser to error
-    bank_word_in="${BANK_WORD}"
-    bank_word=$(IFS=';'; i=1; for bw in ${bank_word_in}; do echo "fuse_bank_word_${i}=${bw}"; let "i=i+1"; done)
-    # Replace implicit newlines with explicit newlines
-    bank_word=$(echo "$bank_word" | sed -n -e '1h;2,$H;${g;s/\n/\\n/gp}')
+def get_bank_word_internal(d):
+    bank_word_var = d.getVar("BANK_WORD")
+    if not bank_word_var:
+        return ""
+
+    bank_word_in=list(eval(bank_word_var))
+    bank_word=""
+    for i, bw in enumerate(bank_word_in, start=1):
+        bank_word+="fuse_bank_word_{}={} {}\\n".format(i, bw[0], bw[1])
+    return bank_word
+
+BANK_WORD_INTERNAL = "${@get_bank_word_internal(d)}"
+
+keep_fusing_block() {
+    local uenvfile="${1?uEnv.txt file must be specified}"
+    local suffix="${2?suffix must be specified}"
+    local bs="#+START_FUSING_BLOCK_"
+    local be="#+END_FUSING_BLOCK_"
+
+    # Find all blocks following the format:
+    # #+START_FUSING_BLOCK_<some-suffix>
+    # ...
+    # #+END_FUSING_BLOCK_<some-suffix>
+    #
+    suffixes=$(cat "${uenvfile}" | \
+               sed -n -e "s/^${bs}\([A-Z_]\+\).*$/\1/p" | \
+               sort | uniq)
+
+    bbdebug 1 "Identified the following fusing block suffixes:" ${suffixes}
+
+    for sf_ in ${suffixes}; do
+        if [ "${sf_}" = "${suffix}" ]; then
+            bbdebug 1 "Keeping fusing code block with suffix ${sf_} in uEnv.txt."
+            sed -e "/^${bs}${sf_}\([[:space:]].*$\|$\)/d" \
+                -e "/^${be}${sf_}\([[:space:]].*$\|$\)/d" \
+                -i "${uenvfile}"
+        else
+            bbdebug 1 "Removing fusing code block with suffix ${sf_} from uEnv.txt."
+            sed -e "/^${bs}${sf_}\([[:space:]].*$\|$\)/,/^${be}${sf_}\([[:space:]].*$\|$\)/d" \
+                -i "${uenvfile}"
+        fi
+    done
+}
+
+inherit deploy
+
+do_compile() {
+    sed -e 's/@@KERNEL_BOOTCMD@@/${KERNEL_BOOTCMD}/' \
+        -e 's/@@KERNEL_IMAGETYPE@@/${KERNEL_IMAGETYPE}/' \
+        -e 's/@@KERNEL_DTB_PREFIX@@/${DTB_PREFIX}/' \
+        -e 's/@@APPEND@@/${APPEND}/' \
+        -e 's/@@FITCONF_FDT_OVERLAYS@@/${FITCONF_FDT_OVERLAYS}/' \
+        "${WORKDIR}/boot.cmd.in" > boot.cmd
 
     bbdebug 1 "Building uEnv.txt..."
     sed -e 's/@@KERNEL_BOOTCMD@@/${KERNEL_BOOTCMD}/' \
@@ -160,12 +220,23 @@ do_compile:append () {
         ${WORKDIR}/uEnv.txt.temp > uEnv.txt
 }
 
-TDX_AMEND_BOOT_SCRIPT:torizon-distro = "0"
-
 do_install () {
     install -d ${D}${libdir}/ostree-boot
     install -m 0644 uEnv.txt ${D}${libdir}/ostree-boot/
 }
 
+do_deploy() {
+    mkimage -T script -C none -n "Distro boot script" -d boot.cmd boot.scr
+    install -m 0644 boot.scr ${DEPLOYDIR}/boot.scr-${MACHINE}
+}
+addtask deploy after do_install before do_build
+
+PROVIDES += "u-boot-default-script"
+
+TDX_AMEND_BOOT_SCRIPT:torizon-distro = "0"
+TDX_AMEND_BOOT_SCRIPT:common-distro = "0"
+
 PACKAGES = "ostree-uboot-env"
 FILES:ostree-uboot-env = "${libdir}/ostree-boot/uEnv.txt"
+
+PACKAGE_ARCH = "${MACHINE_ARCH}"
